@@ -8,10 +8,10 @@ If the version does not match when installing openai, migration is required, but
 Python 3.12.x and later versions can be replaced by "pip install setuptools" instead of Python3-destutils disappearing
 
 Required Installation
- openai
- SpeechRecognition
- subprocess
- os
- pyttsx3
- pyaudio
+ openai,
+ SpeechRecognition,
+ subprocess,
+ os,
+ pyttsx3,
+ pyaudio,
  setuptools
