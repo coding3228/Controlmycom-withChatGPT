@@ -1,4 +1,4 @@
-# Controlmycom-withChatGPT
+# ControlCom-withChatGPT
 Control your's com with voice to using ChatGPT
 
 This project was carried out in python 3.12.2 (venv) virtual environment.
