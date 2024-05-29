@@ -1,0 +1,155 @@
+import openai
+import speech_recognition as sr
+import subprocess
+import os
+import pyttsx3
+import pyaudio
+import sys
+
+# 환경 변수에서 OpenAI API 키 가져오기
+# Bring OpenAI API KEY in System varialbe 
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+# pyttsx3 초기화 (텍스트를 음성으로 변환하기 위한 라이브러리)
+# pyttsx3 Initialization
+engine = pyttsx3.init()
+
+def get_openai_response(prompt, context="command"):
+    """
+    OpenAI GPT-3.5 모델을 사용하여 주어진 프롬프트에 대한 응답을 생성합니다. (모델은 변경가능)
+    Use the OpenAI GPT-3.5 model to generate a response to a given prompt. (Model can change possible)
+
+    context 매개변수는 'command' 또는 'question'일 수 있습니다.
+    context Varialbe is 'command' or 'question'
+    """
+    if context == "command":
+        system_message = "You are a helpful assistant that translates natural language commands into terminal commands for Windows. Only provide the Windows command without any additional explanation."
+    else:
+        system_message = "You are a helpful assistant that answers questions."
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return response.choices[0].message['content'].strip()
+
+def execute_command(command):
+    """
+    사용자가 입력한 명령어를 윈도우 터미널에서 실행하고, 결과를 반환합니다.
+    Runs the commands entered by the user in Windows Terminal and returns the results.
+    
+    명령어 실행 중 오류가 발생한 경우 오류 메시지를 반환합니다.
+    Returns an error message if an error occurs while executing the command.
+
+    유니코드를 latin-1로 쓴 이유는 한국어에서 오류가 뜸    
+    """
+    try:
+        result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return result.stdout.decode('latin-1') + result.stderr.decode('latin-1')
+    except subprocess.CalledProcessError as e:
+        try:
+            return e.stdout.decode('latin-1') + e.stderr.decode('latin-1')
+        except UnicodeDecodeError:
+            return e.stdout.decode('latin-1') + e.stderr.decode('latin-1')
+
+def listen_and_recognize():
+    """
+    마이크를 통해 음성을 인식하고, 인식된 텍스트를 반환합니다.
+    It recognizes voice through the microphone and returns the recognized text.
+
+    인식 중 오류가 발생한 경우 None을 반환합니다.
+    Returns None if an error occurs during recognition.
+    """
+    recognizer = sr.Recognizer()
+    mic = sr.Microphone()
+
+    with mic as source:
+        print("Listening for your command...")
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+
+    try:
+        print("Recognizing...")
+        command = recognizer.recognize_google(audio, language="ko-KR") # 언어는 변경가능 테스트시 한국어랑 영어는 같이 사용 됨
+        print(f"Recognized command: {command}")
+        return command
+    except sr.UnknownValueError:
+        print("Sorry, I did not understand that.")
+        return None
+    except sr.RequestError as e:
+        print(f"Could not request results; {e}")
+        return None
+
+def resource_path(relative_path):
+    """
+    개발 중이거나 PyInstaller로 패키징된 애플리케이션에서 리소스 파일의 절대 경로를 가져옵니다.
+    Gets the absolute path of the resource file from an application that is in development or packaged with PyInstaller.
+    """
+    try:
+        # PyInstaller는 임시 폴더를 생성하고 _MEIPASS에 경로를 저장합니다.
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+def classify_input(input_text):
+    """
+    OpenAI GPT-3.5 모델을 사용하여 입력 텍스트가 명령어인지 질문인지 구분합니다.
+    The OpenAI GPT-3.5 model is used to distinguish whether the input text is a command or a question.
+    """
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are an assistant that classifies input as either a command or a question. Respond with 'command' or 'question' only."},
+            {"role": "user", "content": input_text}
+        ]
+    )
+    classification = response.choices[0].message['content'].strip().lower()
+    return classification
+
+def main():
+    # 메타데이터 파일 경로
+    # metadata_file_path
+    metadata_file_path = resource_path('mic_metadata.txt')
+    print(f"Using metadata file: {metadata_file_path}")
+
+    while True:
+        # 음성 명령을 듣고 텍스트로 변환합니다.
+        # Listen to voice commands and convert them to text.
+        command = listen_and_recognize()
+        if command:
+            if command.lower() == "exit":
+                # "exit" 명령어가 인식되면 프로그램을 종료합니다.
+                # When the "exit" command is recognized, exit the program.
+                print("Exiting program.")
+                break
+
+            # 입력 텍스트가 명령어인지 질문인지 구분합니다.
+            # Distinguish whether the input text is a command or a question.
+            context = classify_input(command)
+
+            # OpenAI API를 호출하여 응답을 받습니다.
+            # Call the OpenAI API to receive a response.
+            response = get_openai_response(command, context)
+            print(f"Response: {response}")
+
+            if context == "command":
+                # 번역된 명령어를 실제로 실행하고 결과를 출력합니다.
+                # It actually executes the translated command and outputs the result.
+                result = execute_command(response)
+                print(f"Command executed successfully.\nResult:\n{result}")
+            else:
+                # 질문에 대한 응답을 음성으로 출력합니다.
+                # Outputs the response to the question as a voice.
+                # context가 "command"가 아닐 경우에만 아래 라인이 실행됩니다.
+                # The line below runs only if the context is not "command".
+                engine.say(response)
+                engine.runAndWait()
+
+
+if __name__ == "__main__":
+    main()
